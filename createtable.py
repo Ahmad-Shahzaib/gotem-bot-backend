@@ -7,7 +7,7 @@ db_file = 'mydatabase2.db'
 conn = sqlite3.connect(db_file)
 cursor = conn.cursor()
 
-# Define the SQL command to create a table with the specified columns
+# Define the SQL command to crseate a table with the specified columns
 create_table_query = '''
 CREATE TABLE IF NOT EXISTS Users (
   UserId TEXT PRIMARY KEY,

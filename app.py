@@ -104,7 +104,7 @@ def get_user():
         if conn:
             conn.close()
 
-# Endpoint to retrieve user invitations
+# Endpoint to retrieve user invitations and the referrewarded value for the user
 @app.route('/get_invitations', methods=['GET'])
 def get_invitations():
     user_id = request.args.get('UserId')
@@ -114,7 +114,16 @@ def get_invitations():
     try:
         conn = get_db_connection()
 
-        # Find users invited by the given user_id
+        # First, get the referrewarded value for the user
+        reward_query = "SELECT referrewarded FROM Users WHERE UserId = ?;"
+        reward_cursor = execute_query_with_retry(conn, reward_query, (str(user_id),))
+        refer_rewarded = reward_cursor.fetchone()
+        if refer_rewarded:
+            refer_rewarded_value = refer_rewarded['referrewarded']
+        else:
+            refer_rewarded_value = None
+
+        # Next, find users invited by the given user_id
         query = """
         SELECT Username, totalgot FROM Users 
         WHERE invitedby = ? AND UserId != invitedby;
@@ -122,11 +131,17 @@ def get_invitations():
         cursor = execute_query_with_retry(conn, query, (str(user_id),))
         users = cursor.fetchall()
 
-        if not users:
-            return jsonify({'error': 'No invitations found'}), 404
+        if not users and refer_rewarded_value is None:
+            return jsonify({'error': 'No invitations or referrewarded value found'}), 404
 
         users_list = [dict(user) for user in users]
-        return jsonify(users_list), 200
+        # Add the referrewarded value only once for the requester
+        result = {
+            'invitations': users_list,
+            'referrewarded': refer_rewarded_value
+        }
+
+        return jsonify(result), 200
 
     except sqlite3.Error as e:
         print(f"SQLite Error: {e}")
@@ -134,6 +149,8 @@ def get_invitations():
     finally:
         if conn:
             conn.close()
+
+
 
 # Endpoint to update a user in the database
 @app.route('/update_user', methods=['POST'])

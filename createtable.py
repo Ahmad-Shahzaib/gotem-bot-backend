@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS Users (
     totalcollectabledaily TEXT,
     totalgot REAL,
     youtube TEXT,
-    walletid TEXT
+    walletid TEXT,
+    referrewarded INTEGER
 );
 '''
 

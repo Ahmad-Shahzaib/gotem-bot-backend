@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS Users (
 # Execute the SQL command
 cursor.execute(create_table_query)
 
-# Commit the changes and close the connection
+# Commit the changes and close the condnection
 conn.commit()
 conn.close()
 

@@ -4,6 +4,8 @@ import time
 from flask_cors import CORS
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from flask import send_file
+import requests
 
 app = Flask(__name__)
 CORS(app)  # Enable CORSd for all routes
@@ -298,6 +300,42 @@ def get_creation_month_count():
     reward = reward_tiers.get(full_years, 7500 if full_years >= 10 else 0)  # Default to 7500 if 10+ years or 0 if not covered by tiers
 
     return jsonify({'user_id': user_id, 'years': years_diff, 'reward': reward})
+
+
+@app.route('/check_telegram_status', methods=['GET'])
+def check_telegram_status():
+    user_id = request.args.get('user_id')
+    chat_id = request.args.get('chat_id')
+    print(f"Received user_id: {user_id}, chat_id: {chat_id}")  # Debugging output
+
+    if not user_id or not chat_id:
+        return jsonify({'error': 'User ID and Chat ID are required'}), 400
+
+    bot_token = '7182099540:AAHQe1nbdbhbkKgyYyxP9pXKnPTYkwBWnsM'  # Replace with your actual Telegram Bot Token
+    url = f'https://api.telegram.org/bot{bot_token}/getChatMember?chat_id={chat_id}&user_id={user_id}'
+    response = requests.get(url)
+    if response.ok:
+        data = response.json()
+        print("Response from Telegram API:", data)  # Additional debugging output
+        if data.get('ok') and 'result' in data and 'status' in data['result']:
+            if data['result']['status'] in ['member', 'administrator', 'creator']:
+                return jsonify({'status': '1'})  # User is a member, admin, or creator
+        return jsonify({'status': '0'})  # Correct status not found
+    else:
+        return jsonify({'error': 'Failed to connect to Telegram API'}), 500
+
+# Endpoint to download the entire database
+@app.route('/download_db', methods=['GET'])
+def download_db():
+    """
+    Endpoint to download the database file.
+    """
+    try:
+        # Provide the path to the dabase file
+        return send_file(DATABASE, as_attachment=True, download_name='mydatabase2.db')
+    except Exception as e:
+        # Handle errors that could occur while sending the file
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == "__main__":

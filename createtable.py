@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS Users (
 );
 '''
 
-# Execute the SQL command
+# Execute the SQL cosmmand
 cursor.execute(create_table_query)
 
 # Commit the changes and close the conection

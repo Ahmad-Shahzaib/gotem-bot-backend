@@ -319,7 +319,7 @@ def check_telegram_status():
         print("Response from Telegram API:", data)  # Additional debugging output
         if data.get('ok') and 'result' in data and 'status' in data['result']:
             if data['result']['status'] in ['member', 'administrator', 'creator']:
-                return jsonify({'status': '1'})  # User is a member, admin, or creator
+                return jsonify({'status': '1'})  # User iss a member, admin, or creator
         return jsonify({'status': '0'})  # Correct status not found
     else:
         return jsonify({'error': 'Failed to connect to Telegram API'}), 500

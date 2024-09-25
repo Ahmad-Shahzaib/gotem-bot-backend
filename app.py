@@ -285,7 +285,7 @@ def get_creation_month_count():
         1: 1500,  # 1-2 years
         2: 2250,  # 2-3 years
         3: 3000,  # 3-4 years
-        4: 3750,  # 4-5 years
+        4: 3750,  # 4-5 yeaars
         5: 4500,  # 5-6 years
         6: 5250,  # 6-7 years
         7: 6000,  # 7-8 years

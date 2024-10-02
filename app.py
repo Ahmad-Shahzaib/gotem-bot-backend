@@ -328,7 +328,7 @@ def check_telegram_status():
     if not user_id or not chat_id:
         return jsonify({'error': 'User ID and Chat ID are required'}), 400
 
-    bot_token = '____'  # Replace with your actual Telegram Bot Token
+    bot_token = '7922489994:AAEk2_p-NPusyfJjvYLFyPrThQ5fSPplx_A'  # Replace with your actual Telegram Bot Token
     url = f'https://api.telegram.org/bot{bot_token}/getChatMember?chat_id={chat_id}&user_id={user_id}'
     response = requests.get(url)
     if response.ok:

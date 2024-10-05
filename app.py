@@ -1,22 +1,29 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 import sqlite3
 import time
-from flask_cors import CORS
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from flask import send_file
 import requests
 
 app = Flask(__name__)
-CORS(app)  # Enable CORSd for all routes
+CORS(app)  # Enable CORS for all routes
 
-# Path to your SQLite database file
+# Paths to SQLite database files
 DATABASE = 'mydatabase2.db'
+GAME_DATABASE = 'game.db'
 
 # Function to get a database connection
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE, check_same_thread=False)
-    conn.row_factory = sqlite3.Row  # Retusrn rssows tass dictioonaries
+def get_db_connection(db_path):
+    """
+    Establish a connection to the SQLite database.
+    Args:
+        db_path (str): Path to the database file.
+    Returns:
+        sqlite3.Connection: SQLite connection object.
+    """
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row  # Return rows as dictionaries
     return conn
 
 # Retry logic for handling SQLite locked errors
@@ -45,7 +52,7 @@ def add_user():
         return jsonify({'error': 'UserId and Username are required'}), 400
 
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(DATABASE)
 
         # Check if the user already exists
         query_check = "SELECT * FROM Users WHERE UserId = ?"
@@ -84,7 +91,7 @@ def get_user():
         return jsonify({'error': 'UserId is required'}), 400
 
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(DATABASE)
 
         # Retrieve user from database
         query = "SELECT * FROM Users WHERE UserId = ?"
@@ -112,7 +119,7 @@ def get_invitations():
         return jsonify({'error': 'UserId is required'}), 400
 
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(DATABASE)
 
         # First, get the referrewarded value for the user
         reward_query = "SELECT referrewarded FROM Users WHERE UserId = ?;"
@@ -170,7 +177,7 @@ def update_user():
     values = list(update_data.values())
 
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(DATABASE)
 
         # Update user in the database
         query = f"UPDATE Users SET {set_clause} WHERE UserId = ?"
@@ -354,6 +361,143 @@ def download_db():
         # Handle errors that could occur while sending the file
         return jsonify({'error': str(e)}), 500
 
+
+
+# Single endpoint to get or add gamer
+@app.route('/gamer', methods=['POST'])
+def get_or_add_gamer():
+    """
+    Retrieve gamer details if exists, otherwise add the gamer to the database.
+    Args:
+        GamerId (int): Gamer ID to retrieve or add.
+    Returns:
+        Response with gamer details.
+    """
+    data = request.json
+    gamer_id = data.get('GamerId')
+
+    if not gamer_id:
+        return jsonify({'error': 'GamerId is required'}), 400
+
+    try:
+        conn = get_db_connection(GAME_DATABASE)
+
+        # Check if the gamer already exists
+        query_check = "SELECT * FROM gamers WHERE userid = ?"
+        cursor = execute_query_with_retry(conn, query_check, (gamer_id,))
+        gamer = cursor.fetchone()
+
+        if gamer:
+            # Gamer already exists, return the row data
+            gamer_dict = dict(gamer)
+            return jsonify({'data': gamer_dict}), 200
+
+        # If gamer doesn't exist, insert with default values
+        query_insert = """
+        INSERT INTO gamers (userid, hookspeed, multiplier, hookspeedtime, multipliertime)
+        VALUES (?, 1, 1, 0, 0)
+        """
+        execute_query_with_retry(conn, query_insert, (gamer_id,))
+
+        # Retrieve the newly added gamer
+        cursor = execute_query_with_retry(conn, query_check, (gamer_id,))
+        gamer = cursor.fetchone()
+        gamer_dict = dict(gamer)
+
+        return jsonify({'data': gamer_dict}), 201
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+# Endpoint to update multiple column values for a gamer
+@app.route('/update_gamer', methods=['POST'])
+def update_gamer():
+    """
+    Update multiple column values for a gamer based on GamerId.
+    Args:
+        GamerId (int): Gamer ID to update.
+        Fields to update (optional): hookspeed, multiplier, hookspeedtime, multipliertime.
+    Returns:
+        Response with success message or error message.
+    """
+    data = request.json
+    gamer_id = data.get('GamerId')
+
+    if not gamer_id:
+        return jsonify({'error': 'GamerId is required'}), 400
+
+    # Prepare update data excluding GamerId
+    update_data = {k: v for k, v in data.items() if k != 'GamerId'}
+    if not update_data:
+        return jsonify({'error': 'No data provided for update'}), 400
+
+    set_clause = ', '.join([f"{key} = ?" for key in update_data.keys()])
+    values = list(update_data.values())
+
+    try:
+        conn = get_db_connection(GAME_DATABASE)
+
+        # Update gamer in the database
+        query = f"UPDATE gamers SET {set_clause} WHERE userid = ?"
+        cursor = execute_query_with_retry(conn, query, values + [gamer_id])
+
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Gamer not found'}), 404
+
+        return jsonify({'message': 'Gamer updated successfully'}), 200
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Endpoint to increase the totalgot column value for a user
+@app.route('/increase_totalgot', methods=['POST'])
+def increase_totalgot():
+    """
+    Increase the totalgot value for a user based on UserId.
+    Args:
+        UserId (int): User ID to update.
+        Amount (int): Amount to increase totalgot by.
+    Returns:
+        Response with success message or error message.
+    """
+    data = request.json
+    user_id = data.get('UserId')
+    amount = data.get('Amount')
+
+    if not user_id or amount is None:
+        return jsonify({'error': 'UserId and Amount are required'}), 400
+
+    try:
+        conn = get_db_connection(DATABASE)
+
+        # Retrieve current totalgot value
+        query_select = "SELECT totalgot FROM Users WHERE UserId = ?"
+        cursor = execute_query_with_retry(conn, query_select, (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        # Update totalgot value by adding the provided amount
+        new_total = user['totalgot'] + amount
+        query_update = "UPDATE Users SET totalgot = ? WHERE UserId = ?"
+        execute_query_with_retry(conn, query_update, (new_total, user_id))
+
+        return jsonify({'message': 'Total got updated successfully', 'totalgot': new_total}), 200
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)

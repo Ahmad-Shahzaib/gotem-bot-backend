@@ -11,7 +11,7 @@ import hmac
 from urllib.parse import parse_qsl
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://gotemappfront.netlify.app", "http://game.gotem.io", "https://dapp.gotem.io/"]}})
+CORS(app)
 
 # Paths to SQLite database files
 DATABASE = 'mydatabase2.db'
@@ -49,7 +49,7 @@ def execute_query_with_retry(conn, query, params=()):
 
 # Function to validate Telegram WebApp initData
 def validate_telegram_init_data(init_data: str) -> bool:
-    bot_token = '7922489994:AAEk2_p-NPusyfJjvYLFyPrThQ5fSPplx_A'
+    bot_token = '7680104101:AAGxn6Yeg3IR6kiiY2Fw4Dqzfc-e7HJffFI'
     if not bot_token:
         print("Bot token is missing")
         return False
@@ -101,11 +101,17 @@ def validate_telegram_init_data(init_data: str) -> bool:
 # Middleware to verify Telegram initData before processing any request
 @app.before_request
 def verify_telegram_init_data():
-    # Allow OPTIONS requests to pass through ftingor CORS preflight
+    # Allow OPTIONS requests to pass through for CORS preflight
     if request.method == 'OPTIONS':
         return
 
-    # Exclude certain routes from Telegram initData sverification
+    # Bypass validation for requests coming from http://localhost:5173/ or http://localhost:8082
+    referer = request.headers.get('Referer', '')
+    origin = request.headers.get('Origin', '')
+    if 'localhost:5173' in referer or 'localhost:5173' in origin or 'localhost:8082' in referer or 'localhost:8082' in origin:
+        return
+
+    # Exclude certain routes from Telegram initData verification
     if request.endpoint not in ['download_db', 'static']:
         init_data = request.headers.get('X-Telegram-Init-Data')
         if not init_data or not validate_telegram_init_data(init_data):
@@ -113,28 +119,39 @@ def verify_telegram_init_data():
 
 
 
-
 @app.route('/add_user', methods=['POST'])
 def add_user():
+    # Log request headers to understand if all necessary headers are present
+    print("Request Headers:", request.headers)
+
+    # Log the incoming JSON data
     data = request.json
+    print("Received Data:", data)
+
+    # Extracting data from the request
     user_id = data.get('UserId')
     username = data.get('Username')
 
+    # Check if required fields are present, otherwise return an error
     if not user_id or not username:
+        print("Missing UserId or Username in request")
         return jsonify({'error': 'UserId and Username are required'}), 400
 
     try:
+        # Get a connection to the database
         conn = get_db_connection(DATABASE)
+        print("Database connection established")
 
         # Check if the user already exists
         query_check = "SELECT * FROM Users WHERE UserId = ?"
         user_exists = execute_query_with_retry(conn, query_check, (str(user_id),)).fetchone()
 
         if user_exists:
-            # User alreadyt exists, retdssurn a message or update user info if needed
+            # Log if the user already exists
+            print(f"User {user_id} already exists in the database")
             return jsonify({'message': 'User already exists'}), 200
 
-        # If the user doesn't exist, insddert with default values
+        # If the user doesn't exist, insert a new user with default values
         query_insert = """
         INSERT INTO Users (
             UserId, totalgot, invitedby, miningstarttime, timeinminute, rate, 
@@ -145,14 +162,19 @@ def add_user():
         )
         """
         execute_query_with_retry(conn, query_insert, (str(user_id), str(data.get('invitedby')), str(username)))
+        print(f"User {user_id} added successfully with default values")
         return jsonify({'message': 'User added successfully with default values'}), 201
 
     except sqlite3.Error as e:
+        # Log the error to understand what went wrong
         print(f"SQLite Error: {e}")
         return jsonify({'error': str(e)}), 500
+
     finally:
+        # Ensure the database connection is closed
         if conn:
             conn.close()
+            print("Database connection closed")
 
 
 # Endpoint to retrieve a user from the database

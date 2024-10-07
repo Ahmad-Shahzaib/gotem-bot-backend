@@ -11,7 +11,7 @@ import hmac
 from urllib.parse import parse_qsl
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "https://gotemappfront.netlify.app"}})
+CORS(app, resources={r"/*": {"origins": ["https://gotemappfront.netlify.app", "http://game.gotem.io", "https://dapp.gotem.io/"]}})
 
 # Paths to SQLite database files
 DATABASE = 'mydatabase2.db'
@@ -49,7 +49,7 @@ def execute_query_with_retry(conn, query, params=()):
 
 # Function to validate Telegram WebApp initData
 def validate_telegram_init_data(init_data: str) -> bool:
-    bot_token = '7680104101:AAGxn6Yeg3IR6kiiY2Fw4Dqzfc-e7HJffFI'
+    bot_token = '7922489994:AAEk2_p-NPusyfJjvYLFyPrThQ5fSPplx_A'
     if not bot_token:
         print("Bot token is missing")
         return False

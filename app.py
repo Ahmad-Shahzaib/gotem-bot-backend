@@ -5,15 +5,19 @@ import time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import requests
+import os
+import hashlib
+import hmac
+from urllib.parse import parse_qsl
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "https://gotemappfront.netlify.app"}})
 
 # Paths to SQLite database files
 DATABASE = 'mydatabase2.db'
 GAME_DATABASE = 'game.db'
 
-# Function to get a database connection
+# Function to get a database connecction
 def get_db_connection(db_path):
     """
     Establish a connection to the SQLite database.
@@ -42,6 +46,74 @@ def execute_query_with_retry(conn, query, params=()):
             else:
                 raise
     raise sqlite3.OperationalError("Failed to execute query after multiple retries")
+
+# Function to validate Telegram WebApp initData
+def validate_telegram_init_data(init_data: str) -> bool:
+    bot_token = '7680104101:AAGxn6Yeg3IR6kiiY2Fw4Dqzfc-e7HJffFI'
+    if not bot_token:
+        print("Bot token is missing")
+        return False
+
+    # Log the raw init_data received
+    print("Received initData:", init_data)
+
+    parsed_data = dict(parse_qsl(init_data, keep_blank_values=True))
+    init_data_hash = parsed_data.pop("hash", None)
+    if not init_data_hash:
+        print("Hash is missing in initData")
+        return False
+
+    # Log the parsed data
+    print("Parsed initData:", parsed_data)
+
+    # Generate the secret key using HMAC-SHA256 of bot_token with "WebAppData" as the key
+    secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+
+    data_check_string = "\n".join(
+        [f"{k}={v}" for k, v in sorted(parsed_data.items())]
+    )
+
+    # Log the data check string
+    print("Data check string:", data_check_string)
+
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    # Log the calculated hash and the hash from initData
+    print("Calculated hash:", calculated_hash)
+    print("Hash from initData:", init_data_hash)
+
+    # Compare hashes
+    is_valid = hmac.compare_digest(init_data_hash, calculated_hash)
+    print("Hash comparison result:", is_valid)
+
+    if not is_valid:
+        return False
+
+    # Verify the auth_date to prevent repslay attacks
+    auth_date = int(parsed_data.get('auth_date', 0))
+    current_time = int(time.time())
+    if current_time - auth_date > 86400:  # 24 hours validity
+        print("Auth date is too old")
+        return False
+
+    return True
+
+# Middleware to verify Telegram initData before processing any request
+@app.before_request
+def verify_telegram_init_data():
+    # Allow OPTIONS requests to pass through ftingor CORS preflight
+    if request.method == 'OPTIONS':
+        return
+
+    # Exclude certain routes from Telegram initData sverification
+    if request.endpoint not in ['download_db', 'static']:
+        init_data = request.headers.get('X-Telegram-Init-Data')
+        if not init_data or not validate_telegram_init_data(init_data):
+            return jsonify({'error': 'Invalid Telegram initData'}), 403
+
+
+
+
 @app.route('/add_user', methods=['POST'])
 def add_user():
     data = request.json
@@ -219,16 +291,18 @@ def predict_creation_date(id: int) -> datetime:
     # Handle case for ID greater than the highest known ID
     return datetime.fromtimestamp(entries[-1][1])
 
+
+# Protected route to get user ranking with Telegram initData verification
 @app.route('/get_user_ranking', methods=['GET'])
 def get_user_ranking():
-    user_id = request.args.get('UserId')
-    if not user_id:
-        return jsonify({'error': 'UserId is required'}), 400
-
     try:
-        conn = sqlite3.connect('mydatabase2.db')  # Adjust the database path as necessary
-        conn.row_factory = sqlite3.Row  # This enables column access by name
+        conn = get_db_connection(DATABASE)
         cursor = conn.cursor()
+
+        # Extract user ID from the request parameters (not from init_data)
+        user_id = request.args.get('UserId', None)
+        if not user_id:
+            return jsonify({'error': 'UserId is required'}), 400
 
         # Query to select all users, ordered by totalgot in descending order
         cursor.execute("""
@@ -239,15 +313,12 @@ def get_user_ranking():
         """)
         top_users = cursor.fetchall()
 
-        # Ensure we have users before proceeding
         if not top_users:
             return jsonify({'error': 'No users found'}), 404
 
-        # Generate a list of dictionaries for each user
         top_users_list = [{'rank': index + 1, 'username': user['Username'], 'totalgot': user['totalgot']}
-                      for index, user in enumerate(top_users)]
+                          for index, user in enumerate(top_users)]
 
-        # Find the requested user's details separately
         cursor.execute("""
             SELECT UserId, Username, totalgot
             FROM Users
@@ -258,23 +329,21 @@ def get_user_ranking():
         if not requested_user_data:
             requested_user = {'error': 'User not found'}
         else:
-            # Get the user's rank by counting how many users have a higher totalgot
             cursor.execute("""
                 SELECT COUNT(*) AS Rank
                 FROM Users
                 WHERE totalgot > ?
             """, (requested_user_data['totalgot'],))
-            rank = cursor.fetchone()['Rank'] + 1  # rank is the count of users with higher totalgot plus one for the current user
+            rank = cursor.fetchone()['Rank'] + 1
             requested_user = {
                 'position': rank,
                 'username': requested_user_data['Username'],
                 'totalgot': requested_user_data['totalgot']
             }
 
-        # Count total number of users
         cursor.execute("SELECT COUNT(*) as TotalUsers FROM Users")
         total_users = cursor.fetchone()['TotalUsers']
-        formatted_total = f"{total_users / 1000:.3f}k"  # Format to show three decimal places and a 'k'
+        formatted_total = f"{total_users / 1000:.3f}k"
 
         response = {
             'requested_user': requested_user,

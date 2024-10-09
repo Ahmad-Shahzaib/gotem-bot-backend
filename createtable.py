@@ -54,38 +54,38 @@
 
 
 
-import sqlite3
+# import sqlite3
 
-# Connect to SQLite (or create the database if it doesn't exist)
-connection = sqlite3.connect('Tasks.db')
+# # Connect to SQLite (or create the database if it doesn't exist)
+# connection = sqlite3.connect('Tasks.db')
 
-# Create a cursor object to interact with the database
-cursor = connection.cursor()
+# # Create a cursor object to interact with the database
+# cursor = connection.cursor()
 
-# Create the Taskdetails table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS Taskdetails (
-    taskid INTEGER PRIMARY KEY,  -- Unique ID for each task
-    taskimage TEXT,              -- Link to the task image
-    taskreward INTEGER,          -- Reward associated with the task
-    tasktitle TEXT,               -- Title of the task
-    tasklink TEXT
-);
-''')
+# # Create the Taskdetails table
+# cursor.execute('''
+# CREATE TABLE IF NOT EXISTS Taskdetails (
+#     taskid INTEGER PRIMARY KEY,  -- Unique ID for each task
+#     taskimage TEXT,              -- Link to the task image
+#     taskreward INTEGER,          -- Reward associated with the task
+#     tasktitle TEXT,               -- Title of the task
+#     tasklink TEXT
+# );
+# ''')
 
-# Create the Taskdone table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS Taskdone (
-    userid INTEGER PRIMARY KEY,  -- Unique ID for each user
-    tasks TEXT                   -- Tasks completed by the user, stored as comma-separated values
-);
-''')
+# # Create the Taskdone table
+# cursor.execute('''
+# CREATE TABLE IF NOT EXISTS Taskdone (
+#     userid INTEGER PRIMARY KEY,  -- Unique ID for each user
+#     tasks TEXT                   -- Tasks completed by the user, stored as comma-separated values
+# );
+# ''')
 
-# Commit changes and close the connection
-connection.commit()
-connection.close()
+# # Commit changes and close the connection
+# connection.commit()
+# connection.close()
 
-print("Database and tables created successfully.")
+# print("Database and tables created successfully.")
 
 
 

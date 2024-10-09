@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, url_for
 from flask_cors import CORS
 import sqlite3
 import time
@@ -9,6 +9,10 @@ import os
 import hashlib
 import hmac
 from urllib.parse import parse_qsl
+import os
+import uuid
+import traceback
+
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +20,10 @@ CORS(app)
 # Paths to SQLite database files
 DATABASE = 'mydatabase2.db'
 GAME_DATABASE = 'game.db'
+task_database='Tasks.db'
+
+if not os.path.exists('static/images'):
+    os.makedirs('static/images')
 
 # Function to get a database connecction
 def get_db_connection(db_path):
@@ -49,7 +57,7 @@ def execute_query_with_retry(conn, query, params=()):
 
 # Function to validate Telegram WebApp initData
 def validate_telegram_init_data(init_data: str) -> bool:
-    bot_token = '7922489994:AAEk2_p-NPusyfJjvYLFyPrThQ5fSPplx_A'
+    bot_token = '7680104101:AAGxn6Yeg3IR6kiiY2Fw4Dqzfc-e7HJffFI'
     if not bot_token:
         print("Bot token is missing")
         return False
@@ -105,14 +113,14 @@ def verify_telegram_init_data():
     if request.method == 'OPTIONS':
         return
 
-    # Bypass validation for requests coming from http://localhost:5173/ or http://localhost:8082
-    referer = request.headers.get('Referer', '')
+    # Bypass validastion for requests coming from http://localhost:5173/ or http://localhost:8082
+    referer = request.headers.get('Refserer', '')
     origin = request.headers.get('Origin', '')
     if 'localhost:5173' in referer or 'localhost:5173' in origin or 'localhost:8082' in referer or 'localhost:8082' in origin:
         return
 
     # Exclude certain routes from Telegram initData verification
-    if request.endpoint not in ['download_db', 'static']:
+    if request.endpoint not in ['download_db', 'static','get_all_user_details','add_task','get_user_tasks']:
         init_data = request.headers.get('X-Telegram-Init-Data')
         if not init_data or not validate_telegram_init_data(init_data):
             return jsonify({'error': 'Invalid Telegram initData'}), 403
@@ -485,8 +493,8 @@ def get_or_add_gamer():
 
         # If gamer doesn't exist, insert with default values
         query_insert = """
-        INSERT INTO gamers (userid, hookspeed, multiplier, hookspeedtime, multipliertime)
-        VALUES (?, 1, 1, 0, 0)
+        INSERT INTO gamers (userid, hookspeed, multiplier, hookspeedtime, multipliertime,startime,starmultiplier)
+        VALUES (?, 1, 1, 0, 0,0,1)
         """
         execute_query_with_retry(conn, query_insert, (gamer_id,))
 
@@ -503,6 +511,9 @@ def get_or_add_gamer():
     finally:
         if conn:
             conn.close()
+
+
+
 # Endpoint to update multiple column values for a gamer
 @app.route('/update_gamer', methods=['POST'])
 def update_gamer():
@@ -510,7 +521,7 @@ def update_gamer():
     Update multiple column values for a gamer based on GamerId.
     Args:
         GamerId (int): Gamer ID to update.
-        Fields to update (optional): hookspeed, multiplier, hookspeedtime, multipliertime.
+        Fields to update (optional): hookspeed, multiplier, hookspeedtime, multipliertime,startime,starmultiplier.
     Returns:
         Response with success message or error message.
     """
@@ -589,6 +600,236 @@ def increase_totalgot():
     finally:
         if conn:
             conn.close()
+# Endpoint to add a new task to Taskdetails
+@app.route('/add_task', methods=['POST'])
+def add_task():
+    try:
+        # Retrieve image file from request
+        file = request.files.get('taskimage')
+        task_title = request.form.get('tasktitle')
+        task_reward = request.form.get('taskreward')
+        task_link = request.form.get('tasklink')
 
+        # Ensure all fields are provided
+        if not task_title or not task_reward or not file or not task_link:
+            return jsonify({'error': 'tasktitle, taskreward, taskimage, and tasklink are required'}), 400
+
+        # Save the image file if present
+        if file:
+            # Generate a unique filename using UUID
+            extension = file.filename.rsplit('.', 1)[1].lower()
+            filename = f"{uuid.uuid4()}.{extension}"
+            file_path = os.path.join('static/images', filename)
+            file.save(file_path)
+
+            # Generate a URL to access the image dynamically
+            task_image_url = f"{request.url_root.rstrip('/')}/static/images/{filename}"
+
+            conn = get_db_connection(task_database)  # Adjust the database name as needed
+
+            # Insert the task into Taskdetails and generate a sequential taskid
+            query_insert = """
+            INSERT INTO Taskdetails (tasktitle, taskreward, taskimage, tasklink)
+            VALUES (?, ?, ?, ?)
+            """
+            cursor = execute_query_with_retry(conn, query_insert, (task_title, task_reward, task_image_url, task_link))
+
+            # Get the last inserted taskid
+            task_id = cursor.lastrowid if cursor else None
+
+            return jsonify({'message': 'Task added successfully', 'taskid': task_id}), 201
+
+        else:
+            return jsonify({'error': 'Image file is required'}), 400
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# Endpoint to remove a task from Taskdetails by its taskid
+@app.route('/remove_task', methods=['DELETE'])
+def remove_task():
+    task_id = request.args.get('taskid')
+
+    if not task_id:
+        return jsonify({'error': 'taskid is required'}), 400
+
+    try:
+        conn = get_db_connection(task_database)
+
+        # Delete the task from Taskdetails by taskid
+        query_delete = "DELETE FROM Taskdetails WHERE taskid = ?"
+        cursor = execute_query_with_retry(conn, query_delete, (task_id,))
+
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Task not found'}), 404
+
+        return jsonify({'message': 'Task removed successfully'}), 200
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# Endpoint to mark a task as done in Taskdone table
+@app.route('/mark_task_done', methods=['POST'])
+def mark_task_done():
+    data = request.json
+    user_id = data.get('userid')
+    task_id = data.get('taskid')
+
+    if not user_id or not task_id:
+        return jsonify({'error': 'userid and taskid are required'}), 400
+
+    try:
+        conn = get_db_connection(task_database)
+
+        # Check if the user already exists in Taskdone table
+        query_check = "SELECT * FROM Taskdone WHERE userid = ?"
+        user_tasks = execute_query_with_retry(conn, query_check, (user_id,)).fetchone()
+
+        if not user_tasks:
+            # User does not exist, create a new entry with the taskid
+            query_insert = """
+            INSERT INTO Taskdone (userid, tasks)
+            VALUES (?, ?)
+            """
+            execute_query_with_retry(conn, query_insert, (user_id, task_id))
+            return jsonify({'message': 'User added and task marked as done'}), 201
+
+        # User exists, check if taskid is already in the list
+        existing_tasks = user_tasks['tasks']
+        existing_tasks_list = existing_tasks.split(',') if existing_tasks else []
+
+        if str(task_id) not in existing_tasks_list:
+            # Append the new taskid to the existing tasks only if it's not already there
+            updated_tasks = f"{existing_tasks},{task_id}" if existing_tasks else task_id
+            query_update = "UPDATE Taskdone SET tasks = ? WHERE userid = ?"
+            execute_query_with_retry(conn, query_update, (updated_tasks, user_id))
+            return jsonify({'message': 'Task marked as done for existing user'}), 200
+        else:
+            # Task already marked as done, no need to update
+            return jsonify({'message': 'Task already marked as done'}), 200
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# Endpoint to get details from both Taskdetails and Taskdone tables for a given userid
+@app.route('/get_user_tasks', methods=['GET'])
+def get_user_tasks():
+    user_id = request.args.get('userid')
+
+    if not user_id:
+        return jsonify({'error': 'userid is required'}), 400
+
+    try:
+        conn = get_db_connection(task_database)
+
+        # Retrieve all tasks from Taskdetails
+        query_task_details = "SELECT * FROM Taskdetails"
+        task_details_cursor = execute_query_with_retry(conn, query_task_details)
+        task_details = task_details_cursor.fetchall()
+
+        # Convert task details to a list of dictionaries
+        task_details_list = [dict(task) for task in task_details]
+
+        # Retrieve the user's completed tasks from Taskdone
+        query_task_done = "SELECT * FROM Taskdone WHERE userid = ?"
+        task_done_cursor = execute_query_with_retry(conn, query_task_done, (user_id,))
+        user_tasks = task_done_cursor.fetchone()
+
+        if user_tasks:
+            completed_task_ids = user_tasks['tasks']
+        else:
+            completed_task_ids = None
+
+        # Prepare the response
+        response = {
+            'task_details': task_details_list,
+            'completed_tasks': completed_task_ids
+        }
+
+        return jsonify(response), 200
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/get_all_user_details', methods=['GET'])
+def get_all_user_details():
+    try:
+        # Connect to all databases
+        user_conn = get_db_connection(DATABASE)
+        game_conn = get_db_connection(GAME_DATABASE)
+        task_conn = get_db_connection(task_database)
+
+        # Get all users' UserId, Username, Refertotal, and totalgot from Users table
+        user_query = """
+            SELECT UserId, Username, Refertotal, totalgot,invitedby,referrewarded
+            FROM Users
+        """
+        user_cursor = user_conn.execute(user_query)
+        users = user_cursor.fetchall()
+
+        # Fetch all hookspeed and multiplier values from the gamers table for all users
+        game_query = """
+            SELECT userid, hookspeed, multiplier
+            FROM gamers
+        """
+        game_cursor = game_conn.execute(game_query)
+        gamer_data = {str(row['userid']): {'hookspeed': row['hookspeed'], 'multiplier': row['multiplier']} for row in game_cursor.fetchall()}
+
+        # Fetch tasks done by each user from Taskdone table
+        task_query = """
+            SELECT userid, tasks
+            FROM Taskdone
+        """
+        task_cursor = task_conn.execute(task_query)
+        task_data = {str(row['userid']): row['tasks'] for row in task_cursor.fetchall()}
+
+        # Combine data from all three tables
+        result = []
+        for user in users:
+            user_id = str(user['UserId'])
+            user_details = {
+                'UserId': user_id,
+                'Username': user['Username'],
+                'Refertotal': user['Refertotal'],
+                'totalgot': user['totalgot'],
+                'referrewarded':user['referrewarded'],
+                'invitefby':user['invitedby'],
+                'hookspeed': gamer_data.get(user_id, {}).get('hookspeed', None),
+                'multiplier': gamer_data.get(user_id, {}).get('multiplier', None),
+                'tasks': task_data.get(user_id, None)
+            }
+            result.append(user_details)
+
+        return jsonify(result), 200
+
+    except sqlite3.Error as e:
+        # Handle database errors
+        print(f"SQLite Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        # Close all database connections
+        if user_conn:
+            user_conn.close()
+        if game_conn:
+            game_conn.close()
+        if task_conn:
+            task_conn.close()
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)

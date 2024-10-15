@@ -57,7 +57,7 @@ def execute_query_with_retry(conn, query, params=()):
 
 # Function to validate Telegram WebApp initData
 def validate_telegram_init_data(init_data: str) -> bool:
-    bot_token = '7680104101:AAGxn6Yeg3IR6kiiY2Fw4Dqzfc-e7HJffFI'
+    bot_token = '7922489994:AAEk2_p-NPusyfJjvYLFyPrThQ5fSPplx_A'
     if not bot_token:
         print("Bot token is missing")
         return False
@@ -120,7 +120,7 @@ def verify_telegram_init_data():
         return
 
     # Exclude certain routes from Telegram initData verification
-    if request.endpoint not in ['download_db', 'static','get_all_user_details','add_task','get_user_tasks']:
+    if request.endpoint not in ['download_db', 'static','get_all_user_details','add_task','get_user_tasks','remove_task']:
         init_data = request.headers.get('X-Telegram-Init-Data')
         if not init_data or not validate_telegram_init_data(init_data):
             return jsonify({'error': 'Invalid Telegram initData'}), 403
